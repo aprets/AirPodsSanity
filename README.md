@@ -12,7 +12,7 @@ The technical reason is simple: Bluetooth has a low bandwidth. So when Apple dec
 
 ## What it does
 
-What this app does is super-duper simple and trivial: Mark one or more output device as "AirPods". Whenever those come online, either the selected input device or the current system input device will be maintained.
+What this app does is super-duper simple and trivial: Mark one or more output device as "AirPods". Whenever those come online, either the first available input device from your priority list or the current system input device will be maintained.
 
 ## How it improves your life
 

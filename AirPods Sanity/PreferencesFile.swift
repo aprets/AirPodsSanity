@@ -15,5 +15,6 @@ class PreferencesFile: Codable
 	var ShowInDock: Bool?
 	var IsEnabled: Bool?
 	var InputDeviceName: String?
+	var InputDeviceNames: [String]?
 	var AirPodsDeviceNames: [String]?
 }

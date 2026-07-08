@@ -51,8 +51,7 @@ private extension AirPodsObserver
 			return
 		}
 
-		guard let __NewInputDeviceName = self._Preferences.InputDeviceName != nil ? self._Preferences.InputDeviceName : self._DefaultInputDeviceName else { return }
-		guard let __InputDevice = self._Simply.allInputDevices.filter({ $0.name == __NewInputDeviceName }).first else { return }
+		guard let __InputDevice = self.GetPreferredInputDevice() else { return }
 
 		if __DefaultInputDevice.id != __InputDevice.id
 		{
@@ -74,9 +73,33 @@ private extension AirPodsObserver
 		}
 	}
 
+	func GetPreferredInputDevice() -> AudioDevice?
+	{
+		let __InputDevices = self._Simply.allInputDevices
+
+		for __InputDeviceName in self._Preferences.InputDeviceNames
+		{
+			if let __InputDevice = __InputDevices.filter({ $0.name == __InputDeviceName }).first
+			{
+				return __InputDevice
+			}
+		}
+
+		if let __DefaultInputDeviceName = self._DefaultInputDeviceName
+		{
+			return __InputDevices.filter({ $0.name == __DefaultInputDeviceName }).first
+		}
+
+		return nil
+	}
+
 	func AddObservers()
 	{
 		self._Observers.append(contentsOf:[
+			self._NotificationCenter.addObserver(forName: .deviceListChanged, object: nil, queue: .main) { (_) in
+				self.UpdateDefaultInputDevice()
+			},
+
 			self._NotificationCenter.addObserver(forName: .defaultInputDeviceChanged, object: nil, queue: .main) { (_) in
 				self.UpdateDefaultInputDevice()
 			},

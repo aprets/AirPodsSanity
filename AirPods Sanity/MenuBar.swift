@@ -219,27 +219,112 @@ class MenuBar
 
 	private func CreateInputDeviceItems(simply: SimplyCoreAudio, preferences: Preferences) -> [NSMenuItem]
 	{
-		let __InputDevices = simply.allInputDevices
+		let __InputDevices = simply.allInputDevices.sorted(by: { $0.name < $1.name })
+		let __PreferredInputDeviceNames = preferences.InputDeviceNames
+		let __AvailableInputDeviceNames = __InputDevices.map({ $0.name })
 		var __MenuItems: [NSMenuItem] = []
 
-		for __AudioDevice in __InputDevices
+		if __PreferredInputDeviceNames.isEmpty
 		{
-			let __MenuItem = NSMenuItem()
-
-			__MenuItem.title = __AudioDevice.name
-			__MenuItem.target = self
-			__MenuItem.action = #selector(OnSelectInputDevice(_:))
-			__MenuItem.state = NSControl.StateValue.off
-
-			if __AudioDevice.name == preferences.InputDeviceName
+			__MenuItems.append(self.CreateDisabledItem(title: NSLocalizedString("MenuBar.NoPreferredInputDevices", comment: "")))
+		}
+		else
+		{
+			for (__Index, __DeviceName) in __PreferredInputDeviceNames.enumerated()
 			{
-				__MenuItem.state = NSControl.StateValue.on
+				__MenuItems.append(self.CreatePreferredInputDeviceItem(
+					deviceName: __DeviceName,
+					priority: __Index + 1,
+					isConnected: __AvailableInputDeviceNames.contains(__DeviceName),
+					isFirst: __Index == 0,
+					isLast: __Index == __PreferredInputDeviceNames.count - 1))
 			}
 
-			__MenuItems.append(__MenuItem)
+			__MenuItems.append(self.CreateInputDeviceActionItem(
+				title: NSLocalizedString("MenuBar.InputDeviceClear", comment: ""),
+				action: #selector(OnClearInputDevices(_:)),
+				deviceName: nil,
+				isEnabled: true))
 		}
 
-		return __MenuItems.sorted(by: { $0.title < $1.title })
+		__MenuItems.append(NSMenuItem.separator())
+		__MenuItems.append(self.CreateDisabledItem(title: NSLocalizedString("MenuBar.AvailableInputDevices", comment: "")))
+
+		let __UnselectedInputDevices = __InputDevices.filter({ !__PreferredInputDeviceNames.contains($0.name) })
+
+		if __UnselectedInputDevices.isEmpty
+		{
+			__MenuItems.append(self.CreateDisabledItem(title: NSLocalizedString("MenuBar.NoAvailableInputDevices", comment: "")))
+		}
+		else
+		{
+			for __AudioDevice in __UnselectedInputDevices
+			{
+				__MenuItems.append(self.CreateInputDeviceActionItem(
+					title: __AudioDevice.name,
+					action: #selector(OnAddInputDevice(_:)),
+					deviceName: __AudioDevice.name,
+					isEnabled: true))
+			}
+		}
+
+		return __MenuItems
+	}
+
+	private func CreatePreferredInputDeviceItem(deviceName: String, priority: Int, isConnected: Bool, isFirst: Bool, isLast: Bool) -> NSMenuItem
+	{
+		let __MenuItem = NSMenuItem()
+		let __UnavailableSuffix = isConnected ? "" : " " + NSLocalizedString("MenuBar.InputDeviceUnavailableSuffix", comment: "")
+
+		__MenuItem.title = "\(priority). \(deviceName)\(__UnavailableSuffix)"
+		__MenuItem.state = NSControl.StateValue.on
+		__MenuItem.representedObject = deviceName
+
+		let __Submenu = NSMenu()
+
+		__Submenu.addItem(self.CreateInputDeviceActionItem(
+			title: NSLocalizedString("MenuBar.InputDeviceMoveUp", comment: ""),
+			action: #selector(OnMoveInputDeviceUp(_:)),
+			deviceName: deviceName,
+			isEnabled: !isFirst))
+		__Submenu.addItem(self.CreateInputDeviceActionItem(
+			title: NSLocalizedString("MenuBar.InputDeviceMoveDown", comment: ""),
+			action: #selector(OnMoveInputDeviceDown(_:)),
+			deviceName: deviceName,
+			isEnabled: !isLast))
+		__Submenu.addItem(NSMenuItem.separator())
+		__Submenu.addItem(self.CreateInputDeviceActionItem(
+			title: NSLocalizedString("MenuBar.InputDeviceRemove", comment: ""),
+			action: #selector(OnRemoveInputDevice(_:)),
+			deviceName: deviceName,
+			isEnabled: true))
+
+		__MenuItem.submenu = __Submenu
+
+		return __MenuItem
+	}
+
+	private func CreateInputDeviceActionItem(title: String, action: Selector?, deviceName: String?, isEnabled: Bool) -> NSMenuItem
+	{
+		let __MenuItem = NSMenuItem()
+
+		__MenuItem.title = title
+		__MenuItem.target = self
+		__MenuItem.action = action
+		__MenuItem.representedObject = deviceName
+		__MenuItem.isEnabled = isEnabled
+
+		return __MenuItem
+	}
+
+	private func CreateDisabledItem(title: String) -> NSMenuItem
+	{
+		let __MenuItem = NSMenuItem()
+
+		__MenuItem.title = title
+		__MenuItem.isEnabled = false
+
+		return __MenuItem
 	}
 
 	private func CreateOutputDeviceItems(simply: SimplyCoreAudio, preferences: Preferences) -> [NSMenuItem]
@@ -364,27 +449,74 @@ class MenuBar
 		self._Preferences.WriteSettings()
 	}
 
-	@objc private func OnSelectInputDevice(_ sender: NSMenuItem)
+	@objc private func OnAddInputDevice(_ sender: NSMenuItem)
 	{
 		let __Preferences = self._Preferences
-		let __State = sender.state
+		guard let __DeviceName = self.GetInputDeviceName(sender: sender) else { return }
+		var __InputDeviceNames = __Preferences.InputDeviceNames
 
-		for __Item in self._InputDeviceItems
+		if !__InputDeviceNames.contains(__DeviceName)
 		{
-			__Item.state = NSControl.StateValue.off
+			__InputDeviceNames.append(__DeviceName)
 		}
 
-		if __State == NSControl.StateValue.on
-		{
-			__Preferences.InputDeviceName = nil
-		}
-		else if __State == NSControl.StateValue.off
-		{
-			__Preferences.InputDeviceName = sender.title
-			sender.state = NSControl.StateValue.on
-		}
-		
+		__Preferences.InputDeviceNames = __InputDeviceNames
+
 		self._Preferences.WriteSettings()
+		self.CreateMenu()
+	}
+
+	@objc private func OnRemoveInputDevice(_ sender: NSMenuItem)
+	{
+		let __Preferences = self._Preferences
+		guard let __DeviceName = self.GetInputDeviceName(sender: sender) else { return }
+
+		__Preferences.InputDeviceNames = __Preferences.InputDeviceNames.filter({ $0 != __DeviceName })
+
+		self._Preferences.WriteSettings()
+		self.CreateMenu()
+	}
+
+	@objc private func OnMoveInputDeviceUp(_ sender: NSMenuItem)
+	{
+		self.MoveInputDevice(sender: sender, offset: -1)
+	}
+
+	@objc private func OnMoveInputDeviceDown(_ sender: NSMenuItem)
+	{
+		self.MoveInputDevice(sender: sender, offset: 1)
+	}
+
+	@objc private func OnClearInputDevices(_ sender: NSMenuItem)
+	{
+		self._Preferences.InputDeviceNames = []
+		self._Preferences.WriteSettings()
+		self.CreateMenu()
+	}
+
+	private func MoveInputDevice(sender: NSMenuItem, offset: Int)
+	{
+		let __Preferences = self._Preferences
+		guard let __DeviceName = self.GetInputDeviceName(sender: sender) else { return }
+		var __InputDeviceNames = __Preferences.InputDeviceNames
+		guard let __Index = __InputDeviceNames.firstIndex(of: __DeviceName) else { return }
+		let __NewIndex = __Index + offset
+
+		if __NewIndex < 0 || __NewIndex >= __InputDeviceNames.count
+		{
+			return
+		}
+
+		__InputDeviceNames.swapAt(__Index, __NewIndex)
+		__Preferences.InputDeviceNames = __InputDeviceNames
+
+		self._Preferences.WriteSettings()
+		self.CreateMenu()
+	}
+
+	private func GetInputDeviceName(sender: NSMenuItem) -> String?
+	{
+		return sender.representedObject as? String
 	}
 
 	@objc private func OnSelectOutputDevice(_ sender: NSMenuItem)
