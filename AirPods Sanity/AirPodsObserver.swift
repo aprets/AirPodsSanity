@@ -18,12 +18,16 @@ class AirPodsObserver: ObservableObject
 
 	private var _DefaultInputDeviceName: String?
 
+	// When a device last connected or disconnected. Launch counts as one.
+	private var _LastDeviceListChange: Date
+
 	init()
 	{
 		self._Preferences = Preferences.Instance
 		self._Simply = SimplyCoreAudio()
 		self._NotificationCenter = NotificationCenter.default
 		self._Observers = []
+		self._LastDeviceListChange = Date()
 
 		self.UpdateDefaultInputDevice()
 		self.AddObservers()
@@ -51,10 +55,17 @@ private extension AirPodsObserver
 			return
 		}
 
+		// No device came or went just now, so the user picked the AirPods mic. Leave it.
+		if Date().timeIntervalSince(self._LastDeviceListChange) > 10
+		{
+			return
+		}
+
 		guard let __InputDevice = self.GetPreferredInputDevice() else { return }
 
 		if __DefaultInputDevice.id != __InputDevice.id
 		{
+			NSLog("AirPods Sanity: \(__DefaultInputDevice.name) took over the input, switching to \(__InputDevice.name)")
 			self.RemoveObservers()
 			__InputDevice.isDefaultInputDevice = true
 			self.AddObservers()
@@ -96,7 +107,28 @@ private extension AirPodsObserver
 	func AddObservers()
 	{
 		self._Observers.append(contentsOf:[
-			self._NotificationCenter.addObserver(forName: .deviceListChanged, object: nil, queue: .main) { (_) in
+			self._NotificationCenter.addObserver(forName: .deviceListChanged, object: nil, queue: .main) { (notification) in
+				// Also posted when no device came or went, e.g. on picking the AirPods mic.
+				let __Added = notification.userInfo?["addedDevices"] as? [AudioDevice] ?? []
+				let __Removed = notification.userInfo?["removedDevices"] as? [AudioDevice] ?? []
+
+				if !__Added.isEmpty || !__Removed.isEmpty
+				{
+					self._LastDeviceListChange = Date()
+				}
+
+				// A mic from the priority list was plugged in and now ranks first. macOS may not pick it on its own.
+				if self._Preferences.IsEnabled,
+				   let __Preferred = self.GetPreferredInputDevice(),
+				   __Added.contains(where: { $0.id == __Preferred.id }),
+				   self._Simply.defaultInputDevice?.id != __Preferred.id
+				{
+					NSLog("AirPods Sanity: \(__Preferred.name) plugged in, switching input to it")
+					self.RemoveObservers()
+					__Preferred.isDefaultInputDevice = true
+					self.AddObservers()
+				}
+
 				self.UpdateDefaultInputDevice()
 			},
 
