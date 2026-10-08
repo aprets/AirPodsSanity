@@ -8,7 +8,7 @@ This is a fork of [Gaulomatic/AirPodsSanity](https://github.com/Gaulomatic/AirPo
 
 - **A priority list of mics.** This comes from [upstream PR #23](https://github.com/Gaulomatic/AirPodsSanity/pull/23) by [@Zeko369](https://github.com/Zeko369). Upstream takes one preferred mic, and if that mic is unplugged it leaves you on the AirPods mic. With a list, say a desk mic and then the MacBook mic, you get the first one that's connected.
 - **Plugging a listed mic back in switches to it.** macOS ranks inputs by which one was picked last. Once the app falls back to the MacBook mic, macOS ranks that first and ignores your desk mic when you plug it back in. The app now switches to a mic from your list when it's plugged in and ranks highest of the ones connected.
-- **Picking the AirPods mic yourself sticks.** The app only overrides the AirPods mic within 10 seconds of a device connecting or disconnecting. Any other switch to the AirPods mic counts as your choice.
+- **Picking the AirPods mic yourself sticks.** When macOS hands the AirPods the mic, it changes something else at the same moment: the output moves to them when you put them on, or a device connects or disconnects. The app overrides those. If only the input changed, you picked it, and the app leaves it until you take the AirPods off.
 - **Builds without Xcode.** `./build.sh` needs only the Command Line Tools.
 
 ### Build and install

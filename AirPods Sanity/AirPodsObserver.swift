@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import os
 import SimplyCoreAudio
 
 class AirPodsObserver: ObservableObject
@@ -18,8 +19,12 @@ class AirPodsObserver: ObservableObject
 
 	private var _DefaultInputDeviceName: String?
 
-	// When a device last connected or disconnected. Launch counts as one.
-	private var _LastDeviceListChange: Date
+	private let _Log = Logger(subsystem: "eu.punke.AirPods-Sanity", category: "Input")
+
+	// macOS moves the input along with the output, e.g. when AirPods go on your head,
+	// and when a device comes or goes. An input change on its own is the user's pick.
+	private var _LastInputChange: Date
+	private var _LastOutputOrDeviceChange: Date
 
 	init()
 	{
@@ -27,7 +32,10 @@ class AirPodsObserver: ObservableObject
 		self._Simply = SimplyCoreAudio()
 		self._NotificationCenter = NotificationCenter.default
 		self._Observers = []
-		self._LastDeviceListChange = Date()
+
+		// Treat launch as automatic, so the AirPods mic doesn't survive a login.
+		self._LastInputChange = Date()
+		self._LastOutputOrDeviceChange = self._LastInputChange
 
 		self.UpdateDefaultInputDevice()
 		self.AddObservers()
@@ -55,9 +63,9 @@ private extension AirPodsObserver
 			return
 		}
 
-		// No device came or went just now, so the user picked the AirPods mic. Leave it.
-		if Date().timeIntervalSince(self._LastDeviceListChange) > 10
+		if abs(self._LastInputChange.timeIntervalSince(self._LastOutputOrDeviceChange)) > 3
 		{
+			self._Log.info("\(__DefaultInputDevice.name, privacy: .public) picked by hand, leaving it")
 			return
 		}
 
@@ -65,7 +73,7 @@ private extension AirPodsObserver
 
 		if __DefaultInputDevice.id != __InputDevice.id
 		{
-			NSLog("AirPods Sanity: \(__DefaultInputDevice.name) took over the input, switching to \(__InputDevice.name)")
+			self._Log.notice("\(__DefaultInputDevice.name, privacy: .public) took over the input, switching to \(__InputDevice.name, privacy: .public)")
 			self.RemoveObservers()
 			__InputDevice.isDefaultInputDevice = true
 			self.AddObservers()
@@ -114,7 +122,7 @@ private extension AirPodsObserver
 
 				if !__Added.isEmpty || !__Removed.isEmpty
 				{
-					self._LastDeviceListChange = Date()
+					self._LastOutputOrDeviceChange = Date()
 				}
 
 				// A mic from the priority list was plugged in and now ranks first. macOS may not pick it on its own.
@@ -123,7 +131,7 @@ private extension AirPodsObserver
 				   __Added.contains(where: { $0.id == __Preferred.id }),
 				   self._Simply.defaultInputDevice?.id != __Preferred.id
 				{
-					NSLog("AirPods Sanity: \(__Preferred.name) plugged in, switching input to it")
+					self._Log.notice("\(__Preferred.name, privacy: .public) plugged in, switching input to it")
 					self.RemoveObservers()
 					__Preferred.isDefaultInputDevice = true
 					self.AddObservers()
@@ -133,6 +141,19 @@ private extension AirPodsObserver
 			},
 
 			self._NotificationCenter.addObserver(forName: .defaultInputDeviceChanged, object: nil, queue: .main) { (_) in
+				self._LastInputChange = Date()
+				self.UpdateDefaultInputDevice()
+			},
+
+			// The output can switch just after the input, so check again.
+			self._NotificationCenter.addObserver(forName: .defaultOutputDeviceChanged, object: nil, queue: .main) { (_) in
+				self._LastOutputOrDeviceChange = Date()
+				self.UpdateDefaultInputDevice()
+			},
+
+			// Alert sounds. macOS moves them with the input on some Bluetooth profile changes.
+			self._NotificationCenter.addObserver(forName: .defaultSystemOutputDeviceChanged, object: nil, queue: .main) { (_) in
+				self._LastOutputOrDeviceChange = Date()
 				self.UpdateDefaultInputDevice()
 			},
 		])
